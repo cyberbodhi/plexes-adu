@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Force browser to pass Referer header to satisfy OpenStreetMap/CARTO tile policy -->
+    <meta name="referrer" content="origin">
     <title>Interactive Map</title>
     
     <!-- Leaflet CSS -->
@@ -21,6 +23,12 @@
             width: 100vw;
         }
         
+        /* Disable mouse interactions on popups to prevent mouseover/mouseout event jitter */
+        .leaflet-popup {
+            pointer-events: none;
+        }
+
+        /* Custom Pop-up Styling */
         .leaflet-popup-content-wrapper {
             border-radius: 8px;
             padding: 4px;
@@ -62,10 +70,18 @@
 
             const map = L.map('map').setView([39.165, -86.533], 13);
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            // CARTO Positron tile layer (clean design, highly reliable, soft referrer restrictions)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
                 maxZoom: 19,
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             }).addTo(map);
+
+            // Format millisecond timestamp into YYYY-MM-DD
+            function formatDate(ms) {
+                if (!ms || isNaN(ms)) return "<em>N/A</em>";
+                const d = new Date(Number(ms));
+                return d.toISOString().split('T')[0];
+            }
 
             function createPopupContent(properties) {
                 if (!properties || Object.keys(properties).length === 0) {
@@ -73,7 +89,13 @@
                 }
                 let html = '<table class="popup-table">';
                 for (const [key, value] of Object.entries(properties)) {
-                    const valText = (value === null || value === undefined) ? "<em>N/A</em>" : value;
+                    let valText;
+                    if (key.toLowerCase() === 'approvaldate') {
+                        valText = formatDate(value);
+                    } else {
+                        valText = (value === null || value === undefined) ? "<em>N/A</em>" : value;
+                    }
+
                     html += `<tr><td class="popup-key">${key}</td><td class="popup-value">${valText}</td></tr>`;
                 }
                 html += '</table>';
@@ -104,13 +126,20 @@
                 },
                 onEachFeature: function(feature, layer) {
                     const popupContent = createPopupContent(feature.properties);
-                    layer.bindPopup(popupContent, { offset: L.point(0, -5), closeButton: false });
 
-                    layer.on('mouseover', function() {
+                    layer.bindPopup(popupContent, {
+                        offset: L.point(0, -14),
+                        closeButton: false,
+                        autoPan: false
+                    });
+
+                    layer.on('mouseover', function(e) {
                         this.setStyle(hoverMarkerStyle);
+                        this.bringToFront();
                         this.openPopup();
                     });
-                    layer.on('mouseout', function() {
+
+                    layer.on('mouseout', function(e) {
                         this.setStyle(defaultMarkerStyle);
                         this.closePopup();
                     });

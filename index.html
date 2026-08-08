@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="origin">
     <title>Interactive Housing & Zoning Map</title>
     
@@ -16,34 +16,43 @@
             height: 100%;
             width: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
         }
         #map {
             height: 100vh;
             width: 100vw;
         }
 
-        /* Popup Styling */
+        /* Responsive Mobile-Friendly Popups with Fixed Minimum Widths */
         .leaflet-popup-content-wrapper {
             border-radius: 8px;
-            padding: 6px;
+            padding: 4px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            min-width: 260px !important;
+            max-width: 85vw !important;
+            max-height: 65vh !important;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            cursor: pointer;
         }
         .leaflet-popup-content {
-            margin: 8px 12px;
+            margin: 6px 8px;
+            width: 100% !important;
+            box-sizing: border-box;
         }
-        /* Hide popup tip so the box rests perfectly centered over the location */
         .leaflet-popup-tip-container {
             display: none;
         }
         .popup-table {
             border-collapse: collapse;
             width: 100%;
-            max-width: 320px;
-            font-size: 13px;
+            font-size: 12px;
+            table-layout: auto;
         }
         .popup-table td {
-            padding: 4px 8px;
+            padding: 4px 6px;
             border-bottom: 1px solid #eee;
+            vertical-align: top;
         }
         .popup-table tr:last-child td {
             border-bottom: none;
@@ -52,10 +61,15 @@
             font-weight: 600;
             color: #555;
             text-transform: capitalize;
+            white-space: nowrap;
+            width: 35%;
         }
         .popup-value {
             color: #111;
-            word-break: break-word;
+            word-wrap: break-word;
+            word-break: normal;
+            white-space: normal;
+            width: 65%;
         }
         
         /* Zoning Indicator Highlight inside Item Popups */
@@ -65,18 +79,6 @@
         }
         .highlight-zone .popup-key {
             color: #0056b3;
-        }
-
-        /* Styling for Zoning Polygon Popups */
-        .zone-popup-title {
-            font-size: 15px;
-            font-weight: bold;
-            color: #0056b3;
-            margin-bottom: 4px;
-        }
-        .zone-popup-desc {
-            font-size: 13px;
-            color: #333;
         }
     </style>
 </head>
@@ -144,7 +146,7 @@
                 activeLayer = null;
             }
 
-            // Open a popup centered DEAD-CENTER over target LatLng
+            // Open popup centered dead-center over LatLng
             function openCenteredPopup(htmlContent, latlng, layer) {
                 if (activeLayer === layer && activePopup && map.hasLayer(activePopup)) {
                     closeActivePopup();
@@ -155,7 +157,7 @@
 
                 const popup = L.popup({
                     closeButton: false,
-                    autoPan: false, // Strictly lock map view
+                    autoPan: false,
                     offset: [0, 0]
                 })
                 .setLatLng(latlng)
@@ -165,18 +167,26 @@
                 activePopup = popup;
                 activeLayer = layer;
 
-                // Dynamically offset popup upward by half its height so it sits dead-centered on latlng
+                // Dynamically offset popup upward by half its height to sit dead-centered
                 requestAnimationFrame(function() {
                     const popupEl = popup.getElement();
                     if (popupEl) {
                         const height = popupEl.offsetHeight;
                         const halfHeight = Math.round(height / 2);
                         
-                        // Apply vertical offset directly to center the popup box over the location
                         popup.options.offset = L.point(0, halfHeight);
                         popup.update();
 
-                        // Close popup when cursor leaves the popup box rectangle
+                        // Undisplay popup when clicked or touched inside the popup container
+                        const dismissPopup = function(e) {
+                            e.stopPropagation();
+                            closeActivePopup();
+                        };
+
+                        popupEl.addEventListener('click', dismissPopup);
+                        popupEl.addEventListener('touchstart', dismissPopup, { passive: true });
+
+                        // Mouseleave fallback
                         popupEl.addEventListener('mouseleave', function() {
                             closeActivePopup();
                         });
@@ -184,40 +194,35 @@
                 });
             }
 
-            // 1. Render Zoning Polygons (Click opens popup centered on mouse click position)
+            // 1. Render Zoning Polygons (No zone name displays)
             if (zoningData && zoningData.features) {
                 L.geoJSON(zoningData, {
                     style: function(feature) {
                         return {
                             color: "#495057",
-                            weight: 1.5,
+                            weight: 1.2,
                             dashArray: "3, 3",
                             fillColor: "#ced4da",
-                            fillOpacity: 0.15
+                            fillOpacity: 0.12
                         };
                     },
                     onEachFeature: function(feature, layer) {
-                        const props = feature.properties || {};
-                        const code = props.zone_code || "Unknown Zone";
-                        const desc = props.zone_description || "";
-                        const zoneHtml = `<div class="zone-popup-title">Zone Code: ${code}</div><div class="zone-popup-desc">${desc}</div>`;
-
                         layer.on('click', function(e) {
                             L.DomEvent.stopPropagation(e);
-                            openCenteredPopup(zoneHtml, e.latlng, this);
+                            closeActivePopup();
                         });
                     }
                 }).addTo(map);
             }
 
-            // 2. Render Item Points (Click opens popup centered DEAD-CENTER over point item location)
+            // 2. Render Point Markers (Mobile-friendly smaller radius: 5px)
             const defaultMarkerStyle = {
-                radius: 7,
+                radius: 5,
                 fillColor: "#e63946",
                 color: "#ffffff",
-                weight: 2,
+                weight: 1.5,
                 opacity: 1,
-                fillOpacity: 0.9
+                fillOpacity: 0.95
             };
 
             const pointsLayer = L.geoJSON(pointsData, {
@@ -230,13 +235,12 @@
                     layer.on('click', function(e) {
                         L.DomEvent.stopPropagation(e);
                         this.bringToFront();
-                        // Pass point's exact latlng (this.getLatLng()) so popup centers directly over the item
                         openCenteredPopup(popupContent, this.getLatLng(), this);
                     });
                 }
             }).addTo(map);
 
-            // Close active pop-up when clicking empty space on the map
+            // Close active pop-up when clicking empty space on map
             map.on('click', function() {
                 closeActivePopup();
             });
@@ -250,11 +254,9 @@
 
             // Initial view fit
             if (pointsLayer.getLayers().length > 0) {
-                map.fitBounds(pointsLayer.getBounds(), { padding: [50, 50] });
+                map.fitBounds(pointsLayer.getBounds(), { padding: [30, 30] });
             }
         });
     </script>
 </body>
 </html>
-
-    
